@@ -111,6 +111,9 @@ permissions:
   protectionstones.merge:
     description: Allows players to merge their regions with other regions they own.
     default: op
+  protectionstones.plot:
+    description: Allows players to create and manage inner plot zones (/ps plot) within their own PS regions.
+    default: op
   protectionstones.admin:
     description: This permission allows users to override all ProtectionStones regions and use /ps admin and /ps reload.
     default: op
