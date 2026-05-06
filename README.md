@@ -1,44 +1,160 @@
-![ProtectionStones](/logo.png?raw=true)
+# ProtectionStones — Custom Fork
 
-[![Maven Central](https://img.shields.io/maven-central/v/dev.espi/protectionstones.svg?label=Maven%20Central)](https://search.maven.org/search?q=g:%22dev.espi%22%20AND%20a:%22protectionstones%22)
-![Open issues](https://img.shields.io/github/issues-raw/espidev/ProtectionStones)
-![Closed issues](https://img.shields.io/github/issues-closed-raw/espidev/ProtectionStones)
+Форк плагина [ProtectionStones 2.10.5](https://github.com/espidev/ProtectionStones) для Paper 1.21.10 с добавлением системы **плотов** — вложенных зон защиты без физических блоков.
 
-[Spigot](https://www.spigotmc.org/resources/protectionstones-updated-for-1-13-1-16-wg7.61797/) | [Permissions](https://github.com/espidev/ProtectionStones/wiki/Permissions) | [Commands](https://github.com/espidev/ProtectionStones/wiki/Commands) | [Configuration](https://github.com/espidev/ProtectionStones/wiki/Configuration) | [Placeholders](https://github.com/espidev/ProtectionStones/wiki/Placeholders) | [Translations](https://github.com/espidev/ProtectionStones/wiki/Translations) | [API Information](https://github.com/espidev/ProtectionStones/wiki/API) | [Javadocs](https://jdps.espi.dev/) | [Dev Builds](https://ci.espi.dev/job/ProtectionStones/)
+> **Совместимость:** Paper 1.21.10 · WorldGuard 7.0.15 · WorldEdit 7.4.2 · Vault 1.7.3
 
-Get support for the plugin on the M.O.S.S. Discord! https://discord.gg/cqM96tcJRx
+---
 
-ProtectionStones is a grief prevention and land claiming plugin.
+## Что добавлено: система плотов (`/ps plot`)
 
-This plugin uses a specified type of minecraft block/blocks as a protection block. When a player placed a block of that type, they are able to protect a region around them. The size of the protected region is configurable in the plugins config file. You can also set which flags players can change and also the default flags to be set when a new region is created.
+### Идея
 
-View the Spigot page (with FAQ and install instructions) [here](https://www.spigotmc.org/resources/protectionstones-updated-for-1-13-1-16-wg7.61797/).
+Владельцы больших приватов (например, кланового поселения) могут нарезать свою территорию на именованные участки для отдельных игроков. Участок создаётся выделением деревянным топориком WorldEdit — никакого физического блока не нужно. Игрок, добавленный в участок, может строить только на нём, но не на всей территории клана.
 
-Check the [wiki](https://github.com/espidev/ProtectionStones/wiki) for plugin reference information.
+### Ключевые свойства
 
-### Dependencies
-* ProtectionStones 2.10.5
-  * Spigot 1.20.6+
-  * WorldGuard 7.0.9+
-  * WorldEdit 7.2.6+
-  * Vault (Optional)
-  * PlaceholderAPI (Optional)
-  * LuckPerms (Optional)
+- **Нет физического блока** — зона определяется только координатами
+- **Точные границы по высоте** — выделяешь топориком куб 5×5×5, плот ровно такой и создаётся (не уходит от бедрока до потолка)
+- **Защита от выхода за пределы** — система проверяет все 8 углов выделения; если хоть один выходит за границу привата — отказ
+- **Каскадное удаление** — при удалении родительского привата все его плоты удаляются автоматически
+- **Автоочистка при старте** — если плот остался без родителя из-за ручных действий через консоль, он удаляется при следующем запуске сервера
 
-### Building
-Make sure you have the Java 21 JDK installed, as well as Maven.
+---
+
+## Команды
+
+Все команды работают из любой точки мира — не нужно стоять рядом с плотом.
+
+### Создание
 
 ```
-git clone https://github.com/espidev/ProtectionStones.git
-cd ProtectionStones
-mvn clean install
+/ps plot create [Название]
 ```
 
-Compiling ProtectionStones will also produce a jar with JavaDocs, which can be useful if you need documentation for an older version.
+Перед выполнением:
+1. Выдели зону деревянным топориком (левый клик — первый угол, правый клик — второй)
+2. Убедись, что находишься в своём привате
+3. Введи команду
 
-### Usage Statistics
-<img src="https://bstats.org/signatures/bukkit/protectionstones.svg">
+Название необязательно, но без него нельзя управлять плотом по имени — придётся использовать внутренний ID.
 
-View full usage statistics [here](https://bstats.org/plugin/bukkit/ProtectionStones/4071).
+### Удаление
 
-This plugin is licensed under the **GPLv3**, as is required by Bukkit plugins.
+```
+/ps plot delete <Название|ID>
+```
+
+### Добавить игрока в плот (может строить внутри)
+
+```
+/ps plot add <Название|ID> <НикИгрока>
+```
+
+### Убрать игрока из плота
+
+```
+/ps plot kick <Название|ID> <НикИгрока>
+```
+
+### Список плотов
+
+```
+/ps plot list
+```
+
+Показывает все твои плоты в текущем мире с указанием родительского привата.
+
+---
+
+## Права
+
+| Право | По умолчанию | Описание |
+|---|---|---|
+| `protectionstones.plot` | OP | Доступ ко всем командам `/ps plot` |
+
+Выдать группе через LuckPerms:
+```
+/lp group <группа> permission set protectionstones.plot true
+```
+
+Владелец родительского привата **автоматически** может управлять всеми плотами внутри него — без дополнительных настроек.
+
+---
+
+## Как работают права на строительство
+
+| Статус игрока | Строить в плоте | Строить вне плота (но в привате) |
+|---|---|---|
+| Добавлен в **основной приват** (`/ps add`) | ✅ | ✅ |
+| Добавлен только **в плот** | ✅ | ❌ |
+| Не добавлен никуда | ❌ | ❌ |
+
+Это ключевое преимущество: участник клана, получивший только свой участок, не имеет доступа к остальной территории.
+
+---
+
+## Сценарий использования
+
+1. Глава клана ставит приват на 64 блока — клановая территория
+2. Топориком выделяет зону 16×16 под дом для Васи
+3. `/ps plot create ДомВаси`
+4. `/ps plot add ДомВаси Вася`
+5. Вася может строить на своём участке, но не на всей клановой территории
+6. Если глава удаляет клановый приват — все участки тоже исчезают
+
+---
+
+## Вложенные привата
+
+Если на территории стоит несколько своих приватов разного размера (например, 64 содержит 32, который содержит 16), система автоматически выбирает **наименьший приват, который целиком вмещает выделение**:
+
+```
+Приват A (64 блока)
+└── Приват B (32 блока, внутри A)
+    └── Приват C (16 блоков, внутри B)
+
+Выделение внутри C         → плот привязывается к C
+Выделение внутри B, вне C  → плот привязывается к B
+Выделение внутри A, вне B  → плот привязывается к A
+Выделение пересекает два привата → отказ
+```
+
+При удалении каждого привата удаляются только плоты, напрямую к нему привязанные.
+
+---
+
+## Конфигурация
+
+В `config.toml` сервера появляется секция:
+
+```toml
+[plot]
+    # Стоимость создания участка. 0.0 — бесплатно.
+    create_cost = 1500.0
+```
+
+---
+
+## Сборка
+
+```bash
+mvn clean install -DskipTests
+```
+
+JAR появится в `target/protectionstones-2.10.5.jar`.
+
+---
+
+## Изменения относительно оригинала
+
+| Файл | Изменение |
+|---|---|
+| `FlagHandler.java` | Новый WG-флаг `ps-plot` (StringFlag) — метка плота, хранит ID родительского привата |
+| `PSConfig.java` | Поле `plotCreateCost` — стоимость создания плота |
+| `src/main/resources/config.toml` | Секция `[plot]` с параметром `create_cost` |
+| `PSL.java` | Сообщения для всех команд `/ps plot` |
+| `plugin.yml` | Разрешение `protectionstones.plot` |
+| `commands/ArgPlot.java` | Новый файл — вся логика команды `/ps plot` |
+| `PSCommand.java` | Регистрация `ArgPlot` |
+| `ListenerClass.java` | Каскадное удаление плотов при удалении привата; автоочистка orphan-плотов при старте сервера |
