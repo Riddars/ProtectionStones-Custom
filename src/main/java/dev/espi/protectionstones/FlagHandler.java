@@ -65,6 +65,9 @@ public class FlagHandler {
     // Identifies a region as a plot; value = parent PS region ID
     public static final Flag<String> PS_PLOT = new StringFlag("ps-plot");
 
+    // Comma-separated UUIDs explicitly denied access inside a plot (overrides parent membership)
+    public static final Flag<String> PS_PLOT_DENIED = new StringFlag("ps-plot-denied");
+
     // called on initial start
     static void registerFlags() {
         FlagRegistry registry = WGUtils.getFlagRegistry();
@@ -86,6 +89,7 @@ public class FlagHandler {
             registry.register(PS_TAX_LAST_PAYMENT_ADDED);
             registry.register(PS_TAX_AUTOPAYER);
             registry.register(PS_PLOT);
+            registry.register(PS_PLOT_DENIED);
         } catch (FlagConflictException e) {
             Bukkit.getLogger().severe("Flag conflict found! The plugin will not work properly! Please contact the developers of the plugin.");
             e.printStackTrace();

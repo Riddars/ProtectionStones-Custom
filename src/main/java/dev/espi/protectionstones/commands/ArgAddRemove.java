@@ -18,6 +18,9 @@ package dev.espi.protectionstones.commands;
 import com.sk89q.worldguard.bukkit.WorldGuardPlugin;
 import dev.espi.protectionstones.*;
 import dev.espi.protectionstones.utils.LimitUtil;
+import com.sk89q.worldguard.protection.managers.RegionManager;
+import com.sk89q.worldguard.protection.regions.ProtectedRegion;
+import dev.espi.protectionstones.utils.WGUtils;
 import dev.espi.protectionstones.utils.UUIDCache;
 import dev.espi.protectionstones.utils.WGUtils;
 import org.bukkit.Bukkit;
@@ -145,9 +148,15 @@ public class ArgAddRemove implements PSCommandArg {
 
                 switch (operationType) {
                     case "add" -> r.addMember(addPlayerUuid);
-                    case "remove" -> r.removeMember(addPlayerUuid);
+                    case "remove" -> {
+                        r.removeMember(addPlayerUuid);
+                        cascadeRemoveFromPlots(r, addPlayerUuid, addPlayerName, p);
+                    }
                     case "addowner" -> r.addOwner(addPlayerUuid);
-                    case "removeowner" -> r.removeOwner(addPlayerUuid);
+                    case "removeowner" -> {
+                        r.removeOwner(addPlayerUuid);
+                        cascadeRemoveFromPlots(r, addPlayerUuid, addPlayerName, p);
+                    }
                 }
             }
         });
@@ -202,6 +211,29 @@ public class ArgAddRemove implements PSCommandArg {
             e.printStackTrace();
         }
         return null;
+    }
+
+    private void cascadeRemoveFromPlots(PSRegion parentRegion, UUID playerUuid, String playerName, Player commandSender) {
+        RegionManager rm = WGUtils.getRegionManagerWithWorld(commandSender.getWorld());
+        if (rm == null) return;
+
+        List<ProtectedRegion> childPlots = new ArrayList<>();
+        for (ProtectedRegion r : rm.getRegions().values()) {
+            if (parentRegion.getId().equals(r.getFlag(FlagHandler.PS_PLOT))) {
+                childPlots.add(r);
+            }
+        }
+        if (childPlots.isEmpty()) return;
+
+        for (ProtectedRegion plot : childPlots) {
+            plot.getMembers().removePlayer(playerUuid);
+            plot.getOwners().removePlayer(playerUuid);
+            ArgPlot.removeDenied(plot, playerUuid);
+        }
+
+        PSL.msg(commandSender, PSL.PLOT_CASCADE_REMOVED.msg()
+                .replace("%player%", playerName)
+                .replace("%count%", String.valueOf(childPlots.size())));
     }
 
     public boolean determinePlayerSurpassedLimit(Player commandSender, List<PSRegion> regionsToBeAddedTo, PSPlayer addedPlayer) {

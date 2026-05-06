@@ -386,6 +386,7 @@ public enum PSL {
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot delete <name|id>\n"
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot add <name|id> <player>\n"
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot kick <name|id> <player>\n"
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot kickall <player>\n"
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot list"),
     PLOT_HELP_DESC("plot.help_desc", "Manage inner plot zones inside your protection region."),
     NO_PERMISSION_PLOT("plot.no_permission", ChatColor.RED + "You do not have permission to use plot commands."),
@@ -399,8 +400,13 @@ public enum PSL {
     PLOT_LIST_HEADER("plot.list_header", ChatColor.DARK_GRAY + "" + ChatColor.STRIKETHROUGH + "=====" + ChatColor.RESET + " Your Plots " + ChatColor.DARK_GRAY + ChatColor.STRIKETHROUGH + "====="),
     PLOT_LIST_EMPTY("plot.list_empty", ChatColor.GRAY + "You have no plots in this world."),
     PLOT_PLAYER_ADDED("plot.player_added", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " added to plot " + ChatColor.AQUA + "%plot%" + ChatColor.GRAY + "."),
-    PLOT_PLAYER_KICKED("plot.player_kicked", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " removed from plot " + ChatColor.AQUA + "%plot%" + ChatColor.GRAY + "."),
+    PLOT_PLAYER_KICKED("plot.player_kicked", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " blocked from plot " + ChatColor.AQUA + "%plot%" + ChatColor.GRAY + "."),
     PLOT_CHILD_REMOVED("plot.child_removed", ChatColor.GRAY + "%count% plot(s) were removed along with the region."),
+    PLOT_OVERLAP("plot.overlap", ChatColor.RED + "Selection overlaps with an existing plot in this region."),
+    PLOT_NO_ACCESS("plot.no_access", ChatColor.RED + "You don't have access to this plot zone."),
+    PLOT_KICKALL("plot.kickall", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " removed from " + ChatColor.AQUA + "%count%" + ChatColor.GRAY + " plot(s)."),
+    PLOT_CASCADE_REMOVED("plot.cascade_removed", ChatColor.GRAY + "%player% was also removed from " + ChatColor.AQUA + "%count%" + ChatColor.GRAY + " child plot(s)."),
+    PLOT_CANNOT_KICK_PARENT_OWNER("plot.cannot_kick_parent_owner", ChatColor.RED + "Cannot restrict the parent region owner from their own plots."),
 
     ;
 

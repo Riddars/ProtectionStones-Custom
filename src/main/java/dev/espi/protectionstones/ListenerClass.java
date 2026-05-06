@@ -57,6 +57,10 @@ import org.bukkit.inventory.ItemStack;
 
 import com.sk89q.worldguard.protection.managers.RemovalStrategy;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
+import dev.espi.protectionstones.commands.ArgPlot;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.hanging.HangingBreakByEntityEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.server.ServerLoadEvent;
 
 import java.util.ArrayList;
@@ -590,6 +594,74 @@ public class ListenerClass implements Listener {
             } else {
                 execEvent(action, event.getPlayer(), event.getPlayer().getName(), event.getRegion());
             }
+        }
+    }
+
+    // ─── Plot deny listeners (block players in ps-plot-denied from accessing plots) ───
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlotDenyBlockBreak(BlockBreakEvent e) {
+        checkPlotDenied(e.getPlayer(), e.getBlock().getLocation(), e);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlotDenyBlockPlace(BlockPlaceEvent e) {
+        checkPlotDenied(e.getPlayer(), e.getBlock().getLocation(), e);
+    }
+
+    // Covers right-click (doors, chests, buttons), left-click, and PHYSICAL (pressure plates, tripwires)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlotDenyInteract(PlayerInteractEvent e) {
+        if (e.getClickedBlock() == null) return;
+        if (e.getAction() != Action.RIGHT_CLICK_BLOCK
+                && e.getAction() != Action.LEFT_CLICK_BLOCK
+                && e.getAction() != Action.PHYSICAL) return;
+        if (isPlotDenied(e.getPlayer(), e.getClickedBlock().getLocation())) {
+            e.setCancelled(true);
+            e.setUseInteractedBlock(org.bukkit.event.Event.Result.DENY);
+            if (e.getAction() != Action.PHYSICAL) {
+                PSL.msg(e.getPlayer(), PSL.PLOT_NO_ACCESS.msg());
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlotDenyInteractEntity(PlayerInteractEntityEvent e) {
+        checkPlotDenied(e.getPlayer(), e.getRightClicked().getLocation(), e);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlotDenyEntityDamage(EntityDamageByEntityEvent e) {
+        if (!(e.getDamager() instanceof Player)) return;
+        checkPlotDenied((Player) e.getDamager(), e.getEntity().getLocation(), e);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlotDenyHangingBreak(HangingBreakByEntityEvent e) {
+        if (!(e.getRemover() instanceof Player)) return;
+        checkPlotDenied((Player) e.getRemover(), e.getEntity().getLocation(), e);
+    }
+
+    // Returns true if the player is denied at the given location (and sends the message)
+    private boolean isPlotDenied(Player p, org.bukkit.Location loc) {
+        RegionManager rm = WGUtils.getRegionManagerWithWorld(loc.getWorld());
+        if (rm == null) return false;
+        BlockVector3 bv = BlockVector3.at(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+        for (ProtectedRegion r : rm.getApplicableRegions(bv).getRegions()) {
+            if (r.getFlag(FlagHandler.PS_PLOT) == null) continue;
+            if (!ArgPlot.isDenied(p.getUniqueId(), r)) continue;
+            String parentId = r.getFlag(FlagHandler.PS_PLOT);
+            ProtectedRegion parent = rm.getRegion(parentId);
+            if (parent != null && parent.getOwners().getUniqueIds().contains(p.getUniqueId())) continue;
+            return true;
+        }
+        return false;
+    }
+
+    private void checkPlotDenied(Player p, org.bukkit.Location loc, org.bukkit.event.Cancellable event) {
+        if (isPlotDenied(p, loc)) {
+            event.setCancelled(true);
+            PSL.msg(p, PSL.PLOT_NO_ACCESS.msg());
         }
     }
 

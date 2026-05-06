@@ -34,58 +34,75 @@ import dev.espi.protectionstones.ProtectionStones;
 import dev.espi.protectionstones.utils.UUIDCache;
 import dev.espi.protectionstones.utils.WGUtils;
 import net.milkbowl.vault.economy.Economy;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class ArgPlot implements PSCommandArg {
 
-    @Override
-    public List<String> getNames() {
-        return Arrays.asList("plot");
-    }
+    // ─── Public static helpers (used by ListenerClass and ArgAddRemove) ────────
 
-    @Override
-    public boolean allowNonPlayersToExecute() {
+    public static boolean isDenied(UUID uuid, ProtectedRegion plot) {
+        String denied = plot.getFlag(FlagHandler.PS_PLOT_DENIED);
+        if (denied == null || denied.isEmpty()) return false;
+        for (String part : denied.split(",")) {
+            if (part.trim().equalsIgnoreCase(uuid.toString())) return true;
+        }
         return false;
     }
 
-    @Override
-    public List<String> getPermissionsToExecute() {
-        return Arrays.asList("protectionstones.plot");
+    public static void addDenied(ProtectedRegion plot, UUID uuid) {
+        if (isDenied(uuid, plot)) return;
+        String current = plot.getFlag(FlagHandler.PS_PLOT_DENIED);
+        String newVal = (current == null || current.isEmpty()) ? uuid.toString() : current + "," + uuid;
+        plot.setFlag(FlagHandler.PS_PLOT_DENIED, newVal);
     }
 
-    @Override
-    public HashMap<String, Boolean> getRegisteredFlags() {
-        return null;
+    public static void removeDenied(ProtectedRegion plot, UUID uuid) {
+        String current = plot.getFlag(FlagHandler.PS_PLOT_DENIED);
+        if (current == null || current.isEmpty()) return;
+        String newVal = Arrays.stream(current.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty() && !s.equalsIgnoreCase(uuid.toString()))
+                .collect(Collectors.joining(","));
+        plot.setFlag(FlagHandler.PS_PLOT_DENIED, newVal);
     }
+
+    // ─── Command interface ─────────────────────────────────────────────────────
+
+    @Override
+    public List<String> getNames() { return Arrays.asList("plot"); }
+
+    @Override
+    public boolean allowNonPlayersToExecute() { return false; }
+
+    @Override
+    public List<String> getPermissionsToExecute() { return Arrays.asList("protectionstones.plot"); }
+
+    @Override
+    public HashMap<String, Boolean> getRegisteredFlags() { return null; }
 
     @Override
     public boolean executeArgument(CommandSender s, String[] args, HashMap<String, String> flags) {
         Player p = (Player) s;
-
         if (!p.hasPermission("protectionstones.plot")) {
             return PSL.msg(p, PSL.NO_PERMISSION_PLOT.msg());
         }
-
         if (args.length < 2) {
             return PSL.msg(p, PSL.PLOT_HELP.msg());
         }
-
         switch (args[1].toLowerCase()) {
-            case "create": return handleCreate(p, args);
-            case "delete": return handleDelete(p, args);
-            case "add":    return handleAdd(p, args);
-            case "kick":   return handleKick(p, args);
-            case "list":   return handleList(p);
-            default:       return PSL.msg(p, PSL.PLOT_HELP.msg());
+            case "create":  return handleCreate(p, args);
+            case "delete":  return handleDelete(p, args);
+            case "add":     return handleAdd(p, args);
+            case "kick":    return handleKick(p, args);
+            case "kickall": return handleKickAll(p, args);
+            case "list":    return handleList(p);
+            default:        return PSL.msg(p, PSL.PLOT_HELP.msg());
         }
     }
 
@@ -103,21 +120,21 @@ public class ArgPlot implements PSCommandArg {
 
         BlockVector3 selMin = selection.getMinimumPoint();
         BlockVector3 selMax = selection.getMaximumPoint();
-
-        // 8 corners of the selection bounding box
         BlockVector3[] corners = corners(selMin, selMax);
 
         RegionManager rm = WGUtils.getRegionManagerWithPlayer(p);
 
-        // Find smallest player-owned PS region that fully contains the selection.
-        // If the player has e.g. a 16-block inside a 64-block, we pick the innermost
-        // one that fits — so the selection never has to span outside a single region.
         PSRegion parent = findBestParent(p, rm, corners);
         if (parent == null) {
             return PSL.msg(p, PSL.PLOT_OUTSIDE_REGION.msg());
         }
 
-        // Optional name — checked for uniqueness before creation
+        // Reject if selection overlaps an existing plot in the same parent
+        if (overlapsExistingPlot(rm, parent.getId(), selMin, selMax)) {
+            return PSL.msg(p, PSL.PLOT_OVERLAP.msg());
+        }
+
+        // Optional name — checked for uniqueness per player per world
         String plotName = args.length >= 3 ? args[2] : null;
         if (plotName != null) {
             LocalPlayer lp = WorldGuardPlugin.inst().wrapPlayer(p);
@@ -140,12 +157,11 @@ public class ArgPlot implements PSCommandArg {
             }
         }
 
-        // Create plot with exact Y bounds from the WE selection
         String plotId = generatePlotId(rm);
         ProtectedCuboidRegion plotWG = new ProtectedCuboidRegion(
-            plotId,
-            BlockVector3.at(selMin.x(), selMin.y(), selMin.z()),
-            BlockVector3.at(selMax.x(), selMax.y(), selMax.z())
+                plotId,
+                BlockVector3.at(selMin.x(), selMin.y(), selMin.z()),
+                BlockVector3.at(selMax.x(), selMax.y(), selMax.z())
         );
 
         ProtectedRegion parentWG = parent.getWGRegion();
@@ -171,29 +187,20 @@ public class ArgPlot implements PSCommandArg {
         }
 
         return PSL.msg(p, PSL.PLOT_CREATED.msg()
-            .replace("%id%", plotName != null ? plotName : plotId)
-            .replace("%parent%", parent.getId()));
+                .replace("%id%", plotName != null ? plotName : plotId)
+                .replace("%parent%", parent.getId()));
     }
 
     // ─── /ps plot delete <name|id> ────────────────────────────────────────────
 
     private boolean handleDelete(Player p, String[] args) {
         if (args.length < 3) return PSL.msg(p, PSL.PLOT_HELP.msg());
-        String nameOrId = args[2];
-
         RegionManager rm = WGUtils.getRegionManagerWithPlayer(p);
-        List<ProtectedRegion> matches = findPlots(p, rm, nameOrId);
-
-        if (matches.isEmpty()) {
-            return PSL.msg(p, PSL.PLOT_NOT_FOUND.msg().replace("%name%", nameOrId));
-        }
-        if (matches.size() > 1) {
-            return PSL.msg(p, PSL.PLOT_AMBIGUOUS_NAME.msg().replace("%name%", nameOrId));
-        }
-
+        List<ProtectedRegion> matches = findPlots(p, rm, args[2]);
+        if (matches.isEmpty()) return PSL.msg(p, PSL.PLOT_NOT_FOUND.msg().replace("%name%", args[2]));
+        if (matches.size() > 1) return PSL.msg(p, PSL.PLOT_AMBIGUOUS_NAME.msg().replace("%name%", args[2]));
         ProtectedRegion plot = matches.get(0);
-        String plotId = plot.getId();
-        rm.removeRegion(plotId, RemovalStrategy.UNSET_PARENT_IN_CHILDREN);
+        rm.removeRegion(plot.getId(), RemovalStrategy.UNSET_PARENT_IN_CHILDREN);
         return PSL.msg(p, PSL.PLOT_REMOVED.msg().replace("%id%", displayName(plot)));
     }
 
@@ -201,60 +208,90 @@ public class ArgPlot implements PSCommandArg {
 
     private boolean handleAdd(Player p, String[] args) {
         if (args.length < 4) return PSL.msg(p, PSL.PLOT_HELP.msg());
-        String nameOrId = args[2];
-        String targetName = args[3];
-
-        if (!UUIDCache.containsName(targetName)) {
-            return PSL.msg(p, PSL.PLAYER_NOT_FOUND.msg());
-        }
+        if (!UUIDCache.containsName(args[3])) return PSL.msg(p, PSL.PLAYER_NOT_FOUND.msg());
 
         RegionManager rm = WGUtils.getRegionManagerWithPlayer(p);
-        List<ProtectedRegion> matches = findPlots(p, rm, nameOrId);
+        List<ProtectedRegion> matches = findPlots(p, rm, args[2]);
+        if (matches.isEmpty()) return PSL.msg(p, PSL.PLOT_NOT_FOUND.msg().replace("%name%", args[2]));
+        if (matches.size() > 1) return PSL.msg(p, PSL.PLOT_AMBIGUOUS_NAME.msg().replace("%name%", args[2]));
 
-        if (matches.isEmpty()) {
-            return PSL.msg(p, PSL.PLOT_NOT_FOUND.msg().replace("%name%", nameOrId));
-        }
-        if (matches.size() > 1) {
-            return PSL.msg(p, PSL.PLOT_AMBIGUOUS_NAME.msg().replace("%name%", nameOrId));
-        }
+        UUID targetUUID = UUIDCache.getUUIDFromName(args[3]);
+        ProtectedRegion plot = matches.get(0);
 
-        UUID targetUUID = UUIDCache.getUUIDFromName(targetName);
-        matches.get(0).getMembers().addPlayer(targetUUID);
+        // Remove from denied list (restore access) and add to members
+        removeDenied(plot, targetUUID);
+        plot.getMembers().addPlayer(targetUUID);
 
         return PSL.msg(p, PSL.PLOT_PLAYER_ADDED.msg()
-            .replace("%player%", UUIDCache.getNameFromUUID(targetUUID))
-            .replace("%plot%", displayName(matches.get(0))));
+                .replace("%player%", UUIDCache.getNameFromUUID(targetUUID))
+                .replace("%plot%", displayName(plot)));
     }
 
     // ─── /ps plot kick <name|id> <player> ────────────────────────────────────
 
     private boolean handleKick(Player p, String[] args) {
         if (args.length < 4) return PSL.msg(p, PSL.PLOT_HELP.msg());
-        String nameOrId = args[2];
-        String targetName = args[3];
-
-        if (!UUIDCache.containsName(targetName)) {
-            return PSL.msg(p, PSL.PLAYER_NOT_FOUND.msg());
-        }
+        if (!UUIDCache.containsName(args[3])) return PSL.msg(p, PSL.PLAYER_NOT_FOUND.msg());
 
         RegionManager rm = WGUtils.getRegionManagerWithPlayer(p);
-        List<ProtectedRegion> matches = findPlots(p, rm, nameOrId);
+        List<ProtectedRegion> matches = findPlots(p, rm, args[2]);
+        if (matches.isEmpty()) return PSL.msg(p, PSL.PLOT_NOT_FOUND.msg().replace("%name%", args[2]));
+        if (matches.size() > 1) return PSL.msg(p, PSL.PLOT_AMBIGUOUS_NAME.msg().replace("%name%", args[2]));
 
-        if (matches.isEmpty()) {
-            return PSL.msg(p, PSL.PLOT_NOT_FOUND.msg().replace("%name%", nameOrId));
-        }
-        if (matches.size() > 1) {
-            return PSL.msg(p, PSL.PLOT_AMBIGUOUS_NAME.msg().replace("%name%", nameOrId));
-        }
-
-        UUID targetUUID = UUIDCache.getUUIDFromName(targetName);
+        UUID targetUUID = UUIDCache.getUUIDFromName(args[3]);
         ProtectedRegion plot = matches.get(0);
+
+        // Parent region owner always retains access — cannot be denied
+        String parentId = plot.getFlag(FlagHandler.PS_PLOT);
+        ProtectedRegion parent = parentId != null ? rm.getRegion(parentId) : null;
+        if (parent != null && parent.getOwners().getUniqueIds().contains(targetUUID)) {
+            return PSL.msg(p, PSL.PLOT_CANNOT_KICK_PARENT_OWNER.msg());
+        }
+
+        // Remove from members/owners and add to explicit deny list
         plot.getMembers().removePlayer(targetUUID);
         plot.getOwners().removePlayer(targetUUID);
+        addDenied(plot, targetUUID);
 
         return PSL.msg(p, PSL.PLOT_PLAYER_KICKED.msg()
-            .replace("%player%", UUIDCache.getNameFromUUID(targetUUID))
-            .replace("%plot%", displayName(plot)));
+                .replace("%player%", UUIDCache.getNameFromUUID(targetUUID))
+                .replace("%plot%", displayName(plot)));
+    }
+
+    // ─── /ps plot kickall <player> ────────────────────────────────────────────
+
+    private boolean handleKickAll(Player p, String[] args) {
+        if (args.length < 3) return PSL.msg(p, PSL.PLOT_HELP.msg());
+        if (!UUIDCache.containsName(args[2])) return PSL.msg(p, PSL.PLAYER_NOT_FOUND.msg());
+
+        UUID targetUUID = UUIDCache.getUUIDFromName(args[2]);
+        RegionManager rm = WGUtils.getRegionManagerWithPlayer(p);
+        LocalPlayer lp = WorldGuardPlugin.inst().wrapPlayer(p);
+        boolean isAdmin = p.hasPermission("protectionstones.admin");
+
+        int count = 0;
+        for (ProtectedRegion r : rm.getRegions().values()) {
+            if (r.getFlag(FlagHandler.PS_PLOT) == null) continue;
+            if (!canManagePlot(p, lp, r, rm, isAdmin)) continue;
+
+            // Skip plots where target is parent region owner
+            String parentId = r.getFlag(FlagHandler.PS_PLOT);
+            ProtectedRegion parent = parentId != null ? rm.getRegion(parentId) : null;
+            if (parent != null && parent.getOwners().getUniqueIds().contains(targetUUID)) continue;
+
+            r.getMembers().removePlayer(targetUUID);
+            r.getOwners().removePlayer(targetUUID);
+            addDenied(r, targetUUID);
+            count++;
+        }
+
+        if (count == 0) {
+            return PSL.msg(p, PSL.PLOT_NOT_FOUND.msg().replace("%name%", args[2]));
+        }
+
+        return PSL.msg(p, PSL.PLOT_KICKALL.msg()
+                .replace("%player%", UUIDCache.getNameFromUUID(targetUUID))
+                .replace("%count%", String.valueOf(count)));
     }
 
     // ─── /ps plot list ────────────────────────────────────────────────────────
@@ -271,26 +308,112 @@ public class ArgPlot implements PSCommandArg {
 
             String name = r.getFlag(FlagHandler.PS_NAME);
             String parentId = r.getFlag(FlagHandler.PS_PLOT);
-            String line = ChatColor.AQUA + "> " + ChatColor.WHITE + (name != null ? name : r.getId());
-            line += ChatColor.GRAY + " (id: " + r.getId() + ", parent: " + parentId + ")";
+            ProtectedRegion parent = rm.getRegion(parentId);
+
+            // Effective access: (parent members ∪ plot members ∪ plot owners) − denied
+            Set<UUID> denied = getDeniedSet(r);
+            Set<UUID> direct = new HashSet<>(r.getMembers().getUniqueIds());
+            direct.addAll(r.getOwners().getUniqueIds());
+            Set<UUID> fromParent = parent != null ? new HashSet<>(parent.getMembers().getUniqueIds()) : new HashSet<>();
+
+            Set<UUID> effective = new HashSet<>();
+            effective.addAll(direct);
+            effective.addAll(fromParent);
+            effective.removeAll(denied);
+            effective.remove(p.getUniqueId()); // don't list self
+
+            List<String> accessList = new ArrayList<>();
+            for (UUID uuid : effective) {
+                String pName = UUIDCache.getNameFromUUID(uuid);
+                if (pName == null) continue;
+                boolean viaParent = fromParent.contains(uuid) && !direct.contains(uuid);
+                accessList.add(viaParent
+                        ? ChatColor.YELLOW + pName + ChatColor.GRAY + "(via parent)"
+                        : ChatColor.WHITE + pName);
+            }
+
+            BlockVector3 pMin = r.getMinimumPoint();
+            BlockVector3 pMax = r.getMaximumPoint();
+            String coords = ChatColor.DARK_GRAY + "("
+                    + pMin.x() + "," + pMin.y() + "," + pMin.z()
+                    + ChatColor.DARK_GRAY + ")→("
+                    + pMax.x() + "," + pMax.y() + "," + pMax.z()
+                    + ChatColor.DARK_GRAY + ")";
+
+            String displayStr = name != null ? name : r.getId();
+            String line = ChatColor.AQUA + "● " + ChatColor.WHITE + displayStr
+                    + ChatColor.GRAY + " [" + parentId + "] " + coords
+                    + ChatColor.GRAY + " | Access: "
+                    + (accessList.isEmpty() ? ChatColor.GRAY + "none" : String.join(ChatColor.GRAY + ", ", accessList));
             lines.add(line);
         }
 
-        if (lines.isEmpty()) {
-            return PSL.msg(p, PSL.PLOT_LIST_EMPTY.msg());
-        }
+        if (lines.isEmpty()) return PSL.msg(p, PSL.PLOT_LIST_EMPTY.msg());
 
         PSL.msg(p, PSL.PLOT_LIST_HEADER.msg());
         for (String line : lines) p.sendMessage(line);
         return true;
     }
 
-    // ─── helpers ──────────────────────────────────────────────────────────────
+    // ─── Tab completion ───────────────────────────────────────────────────────
 
-    /**
-     * Finds all plots the player can manage that match the given name or ID.
-     * Returns empty list = not found, size > 1 = ambiguous name.
-     */
+    @Override
+    public List<String> tabComplete(CommandSender sender, String alias, String[] args) {
+        if (!(sender instanceof Player)) return null;
+        Player p = (Player) sender;
+
+        if (args.length == 2) {
+            return Arrays.asList("create", "delete", "add", "kick", "kickall", "list").stream()
+                    .filter(s -> s.startsWith(args[1].toLowerCase()))
+                    .collect(Collectors.toList());
+        }
+
+        if (args.length == 3) {
+            switch (args[1].toLowerCase()) {
+                case "delete":
+                case "add":
+                case "kick": {
+                    RegionManager rm = WGUtils.getRegionManagerWithPlayer(p);
+                    if (rm == null) return null;
+                    LocalPlayer lp = WorldGuardPlugin.inst().wrapPlayer(p);
+                    boolean isAdmin = p.hasPermission("protectionstones.admin");
+                    List<String> names = new ArrayList<>();
+                    for (ProtectedRegion r : rm.getRegions().values()) {
+                        if (r.getFlag(FlagHandler.PS_PLOT) == null) continue;
+                        if (!canManagePlot(p, lp, r, rm, isAdmin)) continue;
+                        String plotName = r.getFlag(FlagHandler.PS_NAME);
+                        names.add(plotName != null ? plotName : r.getId());
+                    }
+                    return names.stream()
+                            .filter(s -> s.toLowerCase().startsWith(args[2].toLowerCase()))
+                            .collect(Collectors.toList());
+                }
+                case "kickall":
+                    return Bukkit.getOnlinePlayers().stream()
+                            .filter(pl -> p.canSee(pl))
+                            .map(Player::getName)
+                            .filter(n -> n.toLowerCase().startsWith(args[2].toLowerCase()))
+                            .collect(Collectors.toList());
+            }
+        }
+
+        if (args.length == 4) {
+            switch (args[1].toLowerCase()) {
+                case "add":
+                case "kick":
+                    return Bukkit.getOnlinePlayers().stream()
+                            .filter(pl -> p.canSee(pl))
+                            .map(Player::getName)
+                            .filter(n -> n.toLowerCase().startsWith(args[3].toLowerCase()))
+                            .collect(Collectors.toList());
+            }
+        }
+
+        return null;
+    }
+
+    // ─── Private helpers ──────────────────────────────────────────────────────
+
     private List<ProtectedRegion> findPlots(Player p, RegionManager rm, String nameOrId) {
         LocalPlayer lp = WorldGuardPlugin.inst().wrapPlayer(p);
         boolean isAdmin = p.hasPermission("protectionstones.admin");
@@ -299,29 +422,17 @@ public class ArgPlot implements PSCommandArg {
         for (ProtectedRegion r : rm.getRegions().values()) {
             if (r.getFlag(FlagHandler.PS_PLOT) == null) continue;
             if (!canManagePlot(p, lp, r, rm, isAdmin)) continue;
-
-            // Exact ID match wins immediately
-            if (r.getId().equalsIgnoreCase(nameOrId)) return java.util.Collections.singletonList(r);
-
+            if (r.getId().equalsIgnoreCase(nameOrId)) return Collections.singletonList(r);
             String name = r.getFlag(FlagHandler.PS_NAME);
-            if (name != null && name.equalsIgnoreCase(nameOrId)) {
-                nameMatches.add(r);
-            }
+            if (name != null && name.equalsIgnoreCase(nameOrId)) nameMatches.add(r);
         }
         return nameMatches;
     }
 
-    /**
-     * Returns true if the player can manage a given plot:
-     * – is the plot owner, OR
-     * – is the owner of the plot's parent PS region, OR
-     * – has protectionstones.admin
-     */
     private boolean canManagePlot(Player p, LocalPlayer lp, ProtectedRegion plot,
-                                  RegionManager rm, boolean isAdmin) {
+                                   RegionManager rm, boolean isAdmin) {
         if (isAdmin) return true;
         if (plot.isOwner(lp)) return true;
-
         String parentId = plot.getFlag(FlagHandler.PS_PLOT);
         if (parentId != null) {
             ProtectedRegion parent = rm.getRegion(parentId);
@@ -330,10 +441,6 @@ public class ArgPlot implements PSCommandArg {
         return false;
     }
 
-    /**
-     * Finds the smallest PS region owned by the player that fully contains
-     * all 8 corners of the selection. Returns null if none qualifies.
-     */
     private PSRegion findBestParent(Player p, RegionManager rm, BlockVector3[] corners) {
         PSRegion best = null;
         long bestFootprint = Long.MAX_VALUE;
@@ -341,7 +448,7 @@ public class ArgPlot implements PSCommandArg {
 
         for (ProtectedRegion r : rm.getRegions().values()) {
             PSRegion psr = PSRegion.fromWGRegion(p.getWorld(), r);
-            if (psr == null) continue; // not a PS region (plots, non-PS regions, etc.)
+            if (psr == null) continue;
             if (!psr.isOwner(p.getUniqueId()) && !isAdmin) continue;
 
             boolean containsAll = true;
@@ -359,16 +466,41 @@ public class ArgPlot implements PSCommandArg {
         return best;
     }
 
+    private boolean overlapsExistingPlot(RegionManager rm, String parentId,
+                                          BlockVector3 selMin, BlockVector3 selMax) {
+        for (ProtectedRegion r : rm.getRegions().values()) {
+            if (!parentId.equals(r.getFlag(FlagHandler.PS_PLOT))) continue;
+            BlockVector3 rMin = r.getMinimumPoint();
+            BlockVector3 rMax = r.getMaximumPoint();
+            if (selMax.x() >= rMin.x() && selMin.x() <= rMax.x() &&
+                selMax.y() >= rMin.y() && selMin.y() <= rMax.y() &&
+                selMax.z() >= rMin.z() && selMin.z() <= rMax.z()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Set<UUID> getDeniedSet(ProtectedRegion plot) {
+        Set<UUID> denied = new HashSet<>();
+        String deniedStr = plot.getFlag(FlagHandler.PS_PLOT_DENIED);
+        if (deniedStr == null || deniedStr.isEmpty()) return denied;
+        for (String s : deniedStr.split(",")) {
+            try { denied.add(UUID.fromString(s.trim())); } catch (Exception ignored) {}
+        }
+        return denied;
+    }
+
     private BlockVector3[] corners(BlockVector3 min, BlockVector3 max) {
         return new BlockVector3[]{
-            BlockVector3.at(min.x(), min.y(), min.z()),
-            BlockVector3.at(max.x(), min.y(), min.z()),
-            BlockVector3.at(min.x(), min.y(), max.z()),
-            BlockVector3.at(max.x(), min.y(), max.z()),
-            BlockVector3.at(min.x(), max.y(), min.z()),
-            BlockVector3.at(max.x(), max.y(), min.z()),
-            BlockVector3.at(min.x(), max.y(), max.z()),
-            BlockVector3.at(max.x(), max.y(), max.z())
+                BlockVector3.at(min.x(), min.y(), min.z()),
+                BlockVector3.at(max.x(), min.y(), min.z()),
+                BlockVector3.at(min.x(), min.y(), max.z()),
+                BlockVector3.at(max.x(), min.y(), max.z()),
+                BlockVector3.at(min.x(), max.y(), min.z()),
+                BlockVector3.at(max.x(), max.y(), min.z()),
+                BlockVector3.at(min.x(), max.y(), max.z()),
+                BlockVector3.at(max.x(), max.y(), max.z())
         };
     }
 
@@ -390,19 +522,8 @@ public class ArgPlot implements PSCommandArg {
         return cost != null ? cost : 1500.0;
     }
 
-    /** Returns the human-readable name for a plot: custom name if set, else WG region ID. */
     private String displayName(ProtectedRegion plot) {
         String name = plot.getFlag(FlagHandler.PS_NAME);
         return name != null ? name : plot.getId();
-    }
-
-    @Override
-    public List<String> tabComplete(CommandSender sender, String alias, String[] args) {
-        if (args.length == 2) {
-            return Arrays.asList("create", "delete", "add", "kick", "list").stream()
-                .filter(s -> s.startsWith(args[1].toLowerCase()))
-                .collect(Collectors.toList());
-        }
-        return null;
     }
 }
