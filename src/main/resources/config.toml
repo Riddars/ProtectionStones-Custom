@@ -92,3 +92,8 @@ allow_home_teleport_for_members = true
 
     # Notify players of outstanding tax payments for the regions they own.
     tax_message_on_join = true
+
+[plot]
+    # Cost for creating an inner plot zone via /ps plot create.
+    # Set to 0.0 to disable the cost.
+    create_cost = 1500.0

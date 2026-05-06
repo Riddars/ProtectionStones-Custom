@@ -380,6 +380,28 @@ public enum PSL {
     MERGE_CLICK_TO_MERGE("merge.click_to_merge", "Click to merge with %region%!"),
     MERGE_AUTO_MERGED("merge.auto_merged", ChatColor.GRAY + "Region automatically merged with " + ChatColor.AQUA + "%region%" + ChatColor.GRAY + "."),
 
+    // ps plot
+    PLOT_HELP("plot.help", ChatColor.DARK_GRAY + "" + ChatColor.STRIKETHROUGH + "=====" + ChatColor.RESET + " /ps plot " + ChatColor.DARK_GRAY + ChatColor.STRIKETHROUGH + "=====\n"
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot create [name]\n"
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot delete <name|id>\n"
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot add <name|id> <player>\n"
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot kick <name|id> <player>\n"
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot list"),
+    PLOT_HELP_DESC("plot.help_desc", "Manage inner plot zones inside your protection region."),
+    NO_PERMISSION_PLOT("plot.no_permission", ChatColor.RED + "You do not have permission to use plot commands."),
+    PLOT_NO_SELECTION("plot.no_selection", ChatColor.RED + "No selection! Use a wooden axe to mark the plot area first."),
+    PLOT_OUTSIDE_REGION("plot.outside_region", ChatColor.RED + "The selection must be entirely inside one of your protection regions!"),
+    PLOT_CREATED("plot.created", ChatColor.AQUA + "Plot created inside " + ChatColor.WHITE + "%parent%" + ChatColor.AQUA + ": " + ChatColor.WHITE + "%id%"),
+    PLOT_REMOVED("plot.removed", ChatColor.AQUA + "Plot removed: " + ChatColor.WHITE + "%id%"),
+    PLOT_NOT_FOUND("plot.not_found", ChatColor.RED + "Plot '%name%' not found. Use /ps plot list to see your plots."),
+    PLOT_AMBIGUOUS_NAME("plot.ambiguous_name", ChatColor.RED + "Multiple plots match '%name%'. Use the full plot ID instead."),
+    PLOT_NAME_TAKEN("plot.name_taken", ChatColor.RED + "You already have a plot named '%name%'. Choose another name."),
+    PLOT_LIST_HEADER("plot.list_header", ChatColor.DARK_GRAY + "" + ChatColor.STRIKETHROUGH + "=====" + ChatColor.RESET + " Your Plots " + ChatColor.DARK_GRAY + ChatColor.STRIKETHROUGH + "====="),
+    PLOT_LIST_EMPTY("plot.list_empty", ChatColor.GRAY + "You have no plots in this world."),
+    PLOT_PLAYER_ADDED("plot.player_added", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " added to plot " + ChatColor.AQUA + "%plot%" + ChatColor.GRAY + "."),
+    PLOT_PLAYER_KICKED("plot.player_kicked", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " removed from plot " + ChatColor.AQUA + "%plot%" + ChatColor.GRAY + "."),
+    PLOT_CHILD_REMOVED("plot.child_removed", ChatColor.GRAY + "%count% plot(s) were removed along with the region."),
+
     ;
 
     private final String path;

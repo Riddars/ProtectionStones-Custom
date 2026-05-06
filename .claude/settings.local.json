@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn clean *)",
+      "Bash(Copy-Item *)",
+      "Bash(docker compose *)",
+      "Bash(rm /c/server/test/data/paper-1.21.4-232.jar)",
+      "Bash(rm /c/server/test/data/cache/mojang_1.21.4.jar)",
+      "Bash(wsl -d Ubuntu-22.04 whoami)",
+      "Bash(wsl whoami *)",
+      "Bash(wsl --list --quiet)",
+      "Bash(wsl -l)",
+      "Bash(curl *)",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(v['name']\\) for v in data.get\\('result',[]\\)]\")",
+      "Bash(python3 -c ' *)",
+      "Bash(unzip -l /c/server/test/plugins/worldguard-bukkit-7.0.15.jar)",
+      "Bash(unzip *)",
+      "Bash(copy *)",
+      "PowerShell(Copy-Item *)"
+    ]
+  }
+}

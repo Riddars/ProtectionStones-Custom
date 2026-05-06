@@ -62,6 +62,9 @@ public class FlagHandler {
     public static final Flag<Set<String>> PS_TAX_LAST_PAYMENT_ADDED = new SetFlag<>("ps-tax-last-payment-added", new StringFlag("ps-tax-last-payment-entry"));
     public static final Flag<String> PS_TAX_AUTOPAYER = new StringFlag("ps-tax-autopayer");
 
+    // Identifies a region as a plot; value = parent PS region ID
+    public static final Flag<String> PS_PLOT = new StringFlag("ps-plot");
+
     // called on initial start
     static void registerFlags() {
         FlagRegistry registry = WGUtils.getFlagRegistry();
@@ -82,6 +85,7 @@ public class FlagHandler {
             registry.register(PS_TAX_PAYMENTS_DUE);
             registry.register(PS_TAX_LAST_PAYMENT_ADDED);
             registry.register(PS_TAX_AUTOPAYER);
+            registry.register(PS_PLOT);
         } catch (FlagConflictException e) {
             Bukkit.getLogger().severe("Flag conflict found! The plugin will not work properly! Please contact the developers of the plugin.");
             e.printStackTrace();

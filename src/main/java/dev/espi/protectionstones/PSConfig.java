@@ -92,6 +92,9 @@ public class PSConfig {
     @Path("economy.tax_message_on_join")
     public Boolean taxMessageOnJoin;
 
+    @Path("plot.create_cost")
+    public Double plotCreateCost;
+
     static void initConfig() {
 
         // check if using config v1 or v2 (config.yml -> config.toml)

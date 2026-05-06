@@ -55,6 +55,11 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
 import org.bukkit.inventory.ItemStack;
 
+import com.sk89q.worldguard.protection.managers.RemovalStrategy;
+import com.sk89q.worldguard.protection.regions.ProtectedRegion;
+import org.bukkit.event.server.ServerLoadEvent;
+
+import java.util.ArrayList;
 import java.util.List;
 
 public class ListenerClass implements Listener {
@@ -586,6 +591,78 @@ public class ListenerClass implements Listener {
                 execEvent(action, event.getPlayer(), event.getPlayer().getName(), event.getRegion());
             }
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPSRemoveCascadePlots(PSRemoveEvent event) {
+        if (event.isCancelled()) return;
+
+        RegionManager rm = WGUtils.getRegionManagerWithWorld(event.getRegion().getWorld());
+        if (rm == null) return;
+
+        String removedId = event.getRegion().getId();
+        List<String> toRemove = new ArrayList<>();
+
+        for (ProtectedRegion r : rm.getRegions().values()) {
+            String plotParent = r.getFlag(FlagHandler.PS_PLOT);
+            if (plotParent == null) continue;
+
+            // Direct child of the region being deleted now
+            if (removedId.equals(plotParent)) {
+                toRemove.add(r.getId());
+                continue;
+            }
+
+            // Orphan: parent PS region no longer exists (from a previous admin /rg remove, crash, etc.)
+            // Note: the region being deleted right now is still in the manager at this point,
+            // so this only catches orphans from *past* operations.
+            if (rm.getRegion(plotParent) == null) {
+                toRemove.add(r.getId());
+            }
+        }
+
+        if (toRemove.isEmpty()) return;
+
+        for (String id : toRemove) {
+            rm.removeRegion(id, RemovalStrategy.UNSET_PARENT_IN_CHILDREN);
+        }
+
+        if (event.getPlayer() != null) {
+            PSL.msg(event.getPlayer(), PSL.PLOT_CHILD_REMOVED.msg()
+                .replace("%count%", String.valueOf(toRemove.size())));
+        }
+    }
+
+    // Runs once after the server finishes loading all worlds and plugins.
+    // Cleans up any orphan plots whose parent PS region no longer exists —
+    // covers edge cases like /rg remove via console or data corruption.
+    @EventHandler
+    public void onServerLoad(ServerLoadEvent event) {
+        int total = 0;
+        for (org.bukkit.World w : Bukkit.getWorlds()) {
+            RegionManager rm = WGUtils.getRegionManagerWithWorld(w);
+            if (rm == null) continue;
+            total += cleanOrphanPlots(w, rm);
+        }
+        if (total > 0) {
+            ProtectionStones.getPluginLogger().info("[Plots] Cleaned " + total + " orphan plot(s) on startup.");
+        }
+    }
+
+    static int cleanOrphanPlots(org.bukkit.World world, RegionManager rm) {
+        List<String> toRemove = new ArrayList<>();
+        for (ProtectedRegion r : rm.getRegions().values()) {
+            String parentId = r.getFlag(FlagHandler.PS_PLOT);
+            if (parentId == null) continue;
+            if (rm.getRegion(parentId) == null) {
+                toRemove.add(r.getId());
+            }
+        }
+        for (String id : toRemove) {
+            rm.removeRegion(id, RemovalStrategy.UNSET_PARENT_IN_CHILDREN);
+            ProtectionStones.getPluginLogger().info("[Plots] Removed orphan plot " + id + " in world " + world.getName());
+        }
+        return toRemove.size();
     }
 
 }
