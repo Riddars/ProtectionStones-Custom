@@ -41,7 +41,9 @@ import org.bukkit.entity.Player;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -80,12 +82,14 @@ public class ArgPlot implements PSCommandArg {
         }
 
         switch (args[1].toLowerCase()) {
-            case "create": return handleCreate(p, args);
-            case "delete": return handleDelete(p, args);
-            case "add":    return handleAdd(p, args);
-            case "kick":   return handleKick(p, args);
-            case "list":   return handleList(p);
-            default:       return PSL.msg(p, PSL.PLOT_HELP.msg());
+            case "create":  return handleCreate(p, args);
+            case "delete":  return handleDelete(p, args);
+            case "add":     return handleAdd(p, args);
+            case "kick":    return handleKick(p, args);
+            case "kickall": return handleKickAll(p, args);
+            case "list":    return handleList(p);
+            case "help":    return PSL.msg(p, PSL.PLOT_HELP.msg());
+            default:        return PSL.msg(p, PSL.PLOT_HELP.msg());
         }
     }
 
@@ -219,11 +223,20 @@ public class ArgPlot implements PSCommandArg {
         }
 
         UUID targetUUID = UUIDCache.getUUIDFromName(targetName);
-        matches.get(0).getMembers().addPlayer(targetUUID);
+        ProtectedRegion addPlot = matches.get(0);
+        addPlot.getMembers().addPlayer(targetUUID);
+
+        // Remove from denied list in case they were previously kicked
+        Set<String> denied = addPlot.getFlag(FlagHandler.PS_PLOT_DENIED);
+        if (denied != null) {
+            denied = new HashSet<>(denied);
+            denied.remove(targetUUID.toString());
+            addPlot.setFlag(FlagHandler.PS_PLOT_DENIED, denied.isEmpty() ? null : denied);
+        }
 
         return PSL.msg(p, PSL.PLOT_PLAYER_ADDED.msg()
             .replace("%player%", UUIDCache.getNameFromUUID(targetUUID))
-            .replace("%plot%", displayName(matches.get(0))));
+            .replace("%plot%", displayName(addPlot)));
     }
 
     // ─── /ps plot kick <name|id> <player> ────────────────────────────────────
@@ -249,12 +262,60 @@ public class ArgPlot implements PSCommandArg {
 
         UUID targetUUID = UUIDCache.getUUIDFromName(targetName);
         ProtectedRegion plot = matches.get(0);
+
+        // Plot owners always keep access — only members can be kicked
+        if (plot.getOwners().getUniqueIds().contains(targetUUID)) {
+            return PSL.msg(p, ChatColor.RED + "Cannot kick a plot owner. Delete the plot or transfer ownership first.");
+        }
+
         plot.getMembers().removePlayer(targetUUID);
-        plot.getOwners().removePlayer(targetUUID);
+
+        // Add to denied list so the player cannot build/interact even if they're in the parent region
+        Set<String> denied = plot.getFlag(FlagHandler.PS_PLOT_DENIED);
+        denied = denied != null ? new HashSet<>(denied) : new HashSet<>();
+        denied.add(targetUUID.toString());
+        plot.setFlag(FlagHandler.PS_PLOT_DENIED, denied);
 
         return PSL.msg(p, PSL.PLOT_PLAYER_KICKED.msg()
             .replace("%player%", UUIDCache.getNameFromUUID(targetUUID))
             .replace("%plot%", displayName(plot)));
+    }
+
+    // ─── /ps plot kickall <player> ────────────────────────────────────────────
+
+    private boolean handleKickAll(Player p, String[] args) {
+        if (args.length < 3) return PSL.msg(p, PSL.PLOT_HELP.msg());
+        String targetName = args[2];
+
+        if (!UUIDCache.containsName(targetName)) {
+            return PSL.msg(p, PSL.PLAYER_NOT_FOUND.msg());
+        }
+
+        RegionManager rm = WGUtils.getRegionManagerWithPlayer(p);
+        LocalPlayer lp = WorldGuardPlugin.inst().wrapPlayer(p);
+        boolean isAdmin = p.hasPermission("protectionstones.admin");
+        UUID targetUUID = UUIDCache.getUUIDFromName(targetName);
+        String targetUUIDStr = targetUUID.toString();
+        int count = 0;
+
+        for (ProtectedRegion r : rm.getRegions().values()) {
+            if (r.getFlag(FlagHandler.PS_PLOT) == null) continue;
+            if (!canManagePlot(p, lp, r, rm, isAdmin)) continue;
+
+            r.getMembers().removePlayer(targetUUID);
+            r.getOwners().removePlayer(targetUUID);
+
+            Set<String> denied = r.getFlag(FlagHandler.PS_PLOT_DENIED);
+            denied = denied != null ? new HashSet<>(denied) : new HashSet<>();
+            if (denied.add(targetUUIDStr)) {
+                r.setFlag(FlagHandler.PS_PLOT_DENIED, denied);
+                count++;
+            }
+        }
+
+        return PSL.msg(p, PSL.PLOT_KICKALL_SUCCESS.msg()
+            .replace("%player%", UUIDCache.getNameFromUUID(targetUUID))
+            .replace("%count%", String.valueOf(count)));
     }
 
     // ─── /ps plot list ────────────────────────────────────────────────────────
@@ -271,8 +332,44 @@ public class ArgPlot implements PSCommandArg {
 
             String name = r.getFlag(FlagHandler.PS_NAME);
             String parentId = r.getFlag(FlagHandler.PS_PLOT);
-            String line = ChatColor.AQUA + "> " + ChatColor.WHITE + (name != null ? name : r.getId());
-            line += ChatColor.GRAY + " (id: " + r.getId() + ", parent: " + parentId + ")";
+
+            String line = ChatColor.AQUA + "> " + ChatColor.WHITE + (name != null ? name : r.getId())
+                + ChatColor.GRAY + " (id: " + r.getId() + ", parent: " + parentId + ")";
+
+            // Accurate access list: who can ACTUALLY interact with this plot right now.
+            // Rule: (plot owners + plot members + parent PS members) minus denied list minus parent PS owners
+            // Parent PS owners always have access but are implicit managers — not shown here.
+            Set<String> denied = r.getFlag(FlagHandler.PS_PLOT_DENIED);
+            if (denied == null) denied = java.util.Collections.emptySet();
+
+            Set<UUID> withAccess = new HashSet<>();
+            withAccess.addAll(r.getOwners().getUniqueIds());   // plot owner(s)
+            withAccess.addAll(r.getMembers().getUniqueIds());  // explicitly added members
+
+            ProtectedRegion parentRegion = rm.getRegion(parentId);
+            if (parentRegion != null) {
+                withAccess.addAll(parentRegion.getMembers().getUniqueIds()); // parent PS members
+                withAccess.removeAll(parentRegion.getOwners().getUniqueIds()); // remove parent owners (implied)
+            }
+
+            // Remove denied players (but plot owners stay — isPlotDenied exempts them at runtime too)
+            final Set<String> deniedFinal = denied;
+            withAccess.removeIf(uuid -> {
+                if (r.getOwners().getUniqueIds().contains(uuid)) return false; // never remove plot owner
+                return deniedFinal.contains(uuid.toString());
+            });
+
+            if (!withAccess.isEmpty()) {
+                List<String> names = new ArrayList<>();
+                for (UUID uuid : withAccess) {
+                    String n = UUIDCache.getNameFromUUID(uuid);
+                    names.add(n != null ? n : uuid.toString().substring(0, 8) + "…");
+                }
+                line += "\n" + ChatColor.GRAY + "   Access: " + ChatColor.WHITE + String.join(", ", names);
+            } else {
+                line += "\n" + ChatColor.GRAY + "   Access: " + ChatColor.DARK_GRAY + "(none)";
+            }
+
             lines.add(line);
         }
 
@@ -399,7 +496,7 @@ public class ArgPlot implements PSCommandArg {
     @Override
     public List<String> tabComplete(CommandSender sender, String alias, String[] args) {
         if (args.length == 2) {
-            return Arrays.asList("create", "delete", "add", "kick", "list").stream()
+            return Arrays.asList("create", "delete", "add", "kick", "kickall", "list", "help").stream()
                 .filter(s -> s.startsWith(args[1].toLowerCase()))
                 .collect(Collectors.toList());
         }

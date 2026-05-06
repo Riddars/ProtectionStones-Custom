@@ -61,6 +61,7 @@ import org.bukkit.event.server.ServerLoadEvent;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 public class ListenerClass implements Listener {
 
@@ -647,6 +648,62 @@ public class ListenerClass implements Listener {
         if (total > 0) {
             ProtectionStones.getPluginLogger().info("[Plots] Cleaned " + total + " orphan plot(s) on startup.");
         }
+    }
+
+    // Deny block break/place for players explicitly kicked from a plot via /ps plot kick.
+    // This runs AFTER WorldGuard (HIGHEST priority) so WG has already allowed the action —
+    // we veto it if the player is in the plot's denied list.
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockBreakPlotDeny(org.bukkit.event.block.BlockBreakEvent event) {
+        if (isPlotDenied(event.getPlayer(), event.getBlock().getLocation())) {
+            event.setCancelled(true);
+            PSL.msg(event.getPlayer(), PSL.PLOT_DENY_BUILD.msg());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockPlacePlotDeny(org.bukkit.event.block.BlockPlaceEvent event) {
+        if (isPlotDenied(event.getPlayer(), event.getBlock().getLocation())) {
+            event.setCancelled(true);
+            PSL.msg(event.getPlayer(), PSL.PLOT_DENY_BUILD.msg());
+        }
+    }
+
+    // Block all block interactions (chests, doors, buttons, levers, etc.) for denied players
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInteractPlotDeny(PlayerInteractEvent event) {
+        if (event.getClickedBlock() == null) return;
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        if (isPlotDenied(event.getPlayer(), event.getClickedBlock().getLocation())) {
+            event.setCancelled(true);
+            PSL.msg(event.getPlayer(), PSL.PLOT_DENY_BUILD.msg());
+        }
+    }
+
+    private boolean isPlotDenied(Player p, org.bukkit.Location location) {
+        RegionManager rm = WGUtils.getRegionManagerWithWorld(location.getWorld());
+        if (rm == null) return false;
+        BlockVector3 bv = BlockVector3.at(location.getBlockX(), location.getBlockY(), location.getBlockZ());
+        String uuid = p.getUniqueId().toString();
+        com.sk89q.worldguard.LocalPlayer lp = WorldGuardPlugin.inst().wrapPlayer(p);
+
+        for (ProtectedRegion r : rm.getApplicableRegions(bv)) {
+            Set<String> denied = r.getFlag(FlagHandler.PS_PLOT_DENIED);
+            if (denied == null || !denied.contains(uuid)) continue;
+
+            // Plot owners are never denied — they always keep access to their own plot
+            if (r.isOwner(lp)) continue;
+
+            // Parent PS region owners are also never denied
+            String parentId = r.getFlag(FlagHandler.PS_PLOT);
+            if (parentId != null) {
+                ProtectedRegion parent = rm.getRegion(parentId);
+                if (parent != null && parent.isOwner(lp)) continue;
+            }
+
+            return true;
+        }
+        return false;
     }
 
     static int cleanOrphanPlots(org.bukkit.World world, RegionManager rm) {

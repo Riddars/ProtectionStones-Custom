@@ -386,6 +386,7 @@ public enum PSL {
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot delete <name|id>\n"
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot add <name|id> <player>\n"
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot kick <name|id> <player>\n"
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot kickall <player>\n"
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot list"),
     PLOT_HELP_DESC("plot.help_desc", "Manage inner plot zones inside your protection region."),
     NO_PERMISSION_PLOT("plot.no_permission", ChatColor.RED + "You do not have permission to use plot commands."),
@@ -400,6 +401,8 @@ public enum PSL {
     PLOT_LIST_EMPTY("plot.list_empty", ChatColor.GRAY + "You have no plots in this world."),
     PLOT_PLAYER_ADDED("plot.player_added", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " added to plot " + ChatColor.AQUA + "%plot%" + ChatColor.GRAY + "."),
     PLOT_PLAYER_KICKED("plot.player_kicked", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " removed from plot " + ChatColor.AQUA + "%plot%" + ChatColor.GRAY + "."),
+    PLOT_KICKALL_SUCCESS("plot.kickall_success", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " was kicked from " + ChatColor.AQUA + "%count%" + ChatColor.GRAY + " plot(s)."),
+    PLOT_DENY_BUILD("plot.deny_build", ChatColor.RED + "You don't have access to this plot!"),
     PLOT_CHILD_REMOVED("plot.child_removed", ChatColor.GRAY + "%count% plot(s) were removed along with the region."),
 
     ;
