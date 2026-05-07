@@ -181,8 +181,21 @@ Plots whose parent PS region was deleted without firing `PSRemoveEvent` (e.g. vi
 | `/ps plot kick <name\|id> <player>` | Same as delete |
 | `/ps plot kickall <player>` | Same as delete — removes and denies player from all manageable plots at once |
 | `/ps plot list` | Any player with plot permission — shows bounds and effective access |
+| `/ps plot flag <name\|id> [flag] [value]` | Same as delete — sets WG flags on the plot independently of the parent |
 
-Tab completion works for all subcommands: plot names are completed for `delete`/`add`/`kick`, online player names for `add`/`kick`/`kickall`.
+Tab completion works for all subcommands: plot names are completed for `delete`/`add`/`kick`/`flag`, online player names for `add`/`kick`/`kickall`, flag names and values for `flag`.
+
+### Per-plot WG flags (`/ps plot flag`)
+
+Allows setting WorldGuard flags directly on a plot region, overriding what the plot would otherwise inherit from the parent PS region via WG parent-child flag inheritance.
+
+**Allowed flags:** `interact`, `chest-access` only (whitelist enforced in `PLOT_ALLOWED_FLAGS` in `ArgPlot`).
+
+**Values:** `allow`, `deny`, `none` (clears the flag — reverts to inheritance from parent).
+
+Without explicitly setting a flag it is **not** stored on the plot at all, so WG evaluates the parent PS region's flags as normal — no change in default behaviour.
+
+The deny list (`ps-plot-denied`) is enforced at `HIGHEST` priority by `ListenerClass` independently of WG flag evaluation. Even if `interact allow` is set on the plot, a kicked player still cannot interact because our listener cancels the event before WG's decision is visible.
 
 Name uniqueness is enforced per player per world at creation time (case-insensitive). Management commands work from anywhere in the world.
 
@@ -203,7 +216,7 @@ Used by `ListenerClass` (deny check) and `ArgAddRemove` (cascade cleanup).
 - `FlagHandler.java` — added `PS_PLOT` and `PS_PLOT_DENIED` StringFlags, both registered in `registerFlags()`
 - `PSConfig.java` — added `plotCreateCost` field (`@Path("plot.create_cost")`)
 - `src/main/resources/config.toml` — added `[plot]` section with `create_cost = 1500.0`
-- `PSL.java` — added `PLOT_*` message entries (including `PLOT_NO_ACCESS`, `PLOT_KICKALL`, `PLOT_CASCADE_REMOVED`, `PLOT_OVERLAP`, `PLOT_CANNOT_KICK_PARENT_OWNER`)
+- `PSL.java` — added `PLOT_*` message entries (including `PLOT_NO_ACCESS`, `PLOT_KICKALL`, `PLOT_CASCADE_REMOVED`, `PLOT_OVERLAP`, `PLOT_CANNOT_KICK_PARENT_OWNER`, `PLOT_FLAG_*`). Message upgrades for `PLOT_HELP` are handled in `messageUpgrades()` — if the stored value doesn't contain `"plot flag"` it is overwritten with the new default on next server start.
 - `commands/ArgPlot.java` — new file, registered in `PSCommand.addDefaultArguments()`
 - `commands/ArgAddRemove.java` — added `cascadeRemoveFromPlots()` called on `remove`/`removeowner`
 - `ListenerClass.java` — added deny listeners (`onPlotDeny*`), `isPlotDenied()`, `checkPlotDenied()`, `onPSRemoveCascadePlots`, `onServerLoad`, `cleanOrphanPlots`

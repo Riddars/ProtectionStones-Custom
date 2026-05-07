@@ -387,7 +387,8 @@ public enum PSL {
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot add <name|id> <player>\n"
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot kick <name|id> <player>\n"
             + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot kickall <player>\n"
-            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot list"),
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot list\n"
+            + ChatColor.AQUA + "> " + ChatColor.GRAY + "/ps plot flag <name|id> [interact|chest-access] [allow|deny|none]"),
     PLOT_HELP_DESC("plot.help_desc", "Manage inner plot zones inside your protection region."),
     NO_PERMISSION_PLOT("plot.no_permission", ChatColor.RED + "You do not have permission to use plot commands."),
     PLOT_NO_SELECTION("plot.no_selection", ChatColor.RED + "No selection! Use a wooden axe to mark the plot area first."),
@@ -407,6 +408,12 @@ public enum PSL {
     PLOT_KICKALL("plot.kickall", ChatColor.AQUA + "%player%" + ChatColor.GRAY + " removed from " + ChatColor.AQUA + "%count%" + ChatColor.GRAY + " plot(s)."),
     PLOT_CASCADE_REMOVED("plot.cascade_removed", ChatColor.GRAY + "%player% was also removed from " + ChatColor.AQUA + "%count%" + ChatColor.GRAY + " child plot(s)."),
     PLOT_CANNOT_KICK_PARENT_OWNER("plot.cannot_kick_parent_owner", ChatColor.RED + "Cannot restrict the parent region owner from their own plots."),
+    PLOT_FLAG_SET("plot.flag_set", ChatColor.AQUA + "Flag " + ChatColor.WHITE + "%flag%" + ChatColor.AQUA + " -> " + ChatColor.WHITE + "%value%" + ChatColor.AQUA + " on plot " + ChatColor.WHITE + "%plot%"),
+    PLOT_FLAG_CLEARED("plot.flag_cleared", ChatColor.AQUA + "Flag " + ChatColor.WHITE + "%flag%" + ChatColor.AQUA + " cleared on plot " + ChatColor.WHITE + "%plot%" + ChatColor.GRAY + " (inherits from parent)"),
+    PLOT_FLAG_INVALID("plot.flag_invalid", ChatColor.RED + "Allowed flags: interact, chest-access. Valid values: allow, deny, none."),
+    PLOT_FLAG_LIST_HEADER("plot.flag_list_header", ChatColor.DARK_GRAY + "" + ChatColor.STRIKETHROUGH + "=====" + ChatColor.RESET + " Flags: %plot% " + ChatColor.DARK_GRAY + ChatColor.STRIKETHROUGH + "====="),
+    PLOT_FLAG_ENTRY("plot.flag_entry", ChatColor.AQUA + "  %flag%" + ChatColor.GRAY + ": " + ChatColor.WHITE + "%value%"),
+    PLOT_FLAG_NONE_SET("plot.flag_none_set", ChatColor.GRAY + "No flags explicitly set - all inherited from parent."),
 
     ;
 
@@ -539,6 +546,8 @@ public enum PSL {
             yml.set(psl.path, psl.defaultMessage);
         } else if (psl == PSL.REACHED_PER_BLOCK_REGION_LIMIT && value.equals("&cYou can not create any more regions of this type.")) {
             yml.set(psl.path, psl.defaultMessage);
+        } else if (psl == PSL.PLOT_HELP && !value.contains("plot flag")) {
+            yml.set(psl.path, applyConfigColours(psl.defaultMessage));
         } else if (value.contains("§")) {
             yml.set(psl.path, applyConfigColours(value));
         }

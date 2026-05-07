@@ -23,6 +23,10 @@ import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldguard.LocalPlayer;
 import com.sk89q.worldguard.bukkit.WorldGuardPlugin;
+import com.sk89q.worldguard.protection.flags.Flag;
+import com.sk89q.worldguard.protection.flags.FlagContext;
+import com.sk89q.worldguard.protection.flags.Flags;
+import com.sk89q.worldguard.protection.flags.InvalidFlagFormat;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.managers.RemovalStrategy;
 import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
@@ -43,6 +47,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class ArgPlot implements PSCommandArg {
+
+    private static final List<String> PLOT_ALLOWED_FLAGS = Arrays.asList("interact", "chest-access");
 
     // ─── Public static helpers (used by ListenerClass and ArgAddRemove) ────────
 
@@ -102,6 +108,7 @@ public class ArgPlot implements PSCommandArg {
             case "kick":    return handleKick(p, args);
             case "kickall": return handleKickAll(p, args);
             case "list":    return handleList(p);
+            case "flag":    return handleFlag(p, args);
             default:        return PSL.msg(p, PSL.PLOT_HELP.msg());
         }
     }
@@ -355,6 +362,66 @@ public class ArgPlot implements PSCommandArg {
         return true;
     }
 
+    // ─── /ps plot flag <name|id> [flag] [value] ──────────────────────────────
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private boolean handleFlag(Player p, String[] args) {
+        if (args.length < 3) return PSL.msg(p, PSL.PLOT_HELP.msg());
+        RegionManager rm = WGUtils.getRegionManagerWithPlayer(p);
+        List<ProtectedRegion> matches = findPlots(p, rm, args[2]);
+        if (matches.isEmpty()) return PSL.msg(p, PSL.PLOT_NOT_FOUND.msg().replace("%name%", args[2]));
+        if (matches.size() > 1) return PSL.msg(p, PSL.PLOT_AMBIGUOUS_NAME.msg().replace("%name%", args[2]));
+        ProtectedRegion plot = matches.get(0);
+
+        if (args.length == 3) return showPlotFlags(p, plot);
+        if (args.length < 5) return PSL.msg(p, PSL.PLOT_HELP.msg());
+
+        String flagName = args[3].toLowerCase();
+        String value    = args[4].toLowerCase();
+
+        if (!PLOT_ALLOWED_FLAGS.contains(flagName)) return PSL.msg(p, PSL.PLOT_FLAG_INVALID.msg());
+
+        Flag flag = Flags.fuzzyMatchFlag(WGUtils.getFlagRegistry(), flagName);
+        if (flag == null) return PSL.msg(p, PSL.PLOT_FLAG_INVALID.msg());
+
+        if (value.equals("none") || value.equals("null")) {
+            plot.setFlag(flag, null);
+            return PSL.msg(p, PSL.PLOT_FLAG_CLEARED.msg()
+                    .replace("%flag%", flagName)
+                    .replace("%plot%", displayName(plot)));
+        }
+
+        try {
+            FlagContext fc = FlagContext.create().setInput(value).build();
+            plot.setFlag(flag, flag.parseInput(fc));
+            return PSL.msg(p, PSL.PLOT_FLAG_SET.msg()
+                    .replace("%flag%", flagName)
+                    .replace("%value%", value)
+                    .replace("%plot%", displayName(plot)));
+        } catch (InvalidFlagFormat e) {
+            return PSL.msg(p, PSL.PLOT_FLAG_INVALID.msg());
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    private boolean showPlotFlags(Player p, ProtectedRegion plot) {
+        PSL.msg(p, PSL.PLOT_FLAG_LIST_HEADER.msg().replace("%plot%", displayName(plot)));
+        boolean any = false;
+        for (String flagName : PLOT_ALLOWED_FLAGS) {
+            Flag flag = Flags.fuzzyMatchFlag(WGUtils.getFlagRegistry(), flagName);
+            if (flag == null) continue;
+            Object val = plot.getFlag(flag);
+            if (val != null) {
+                any = true;
+                p.sendMessage(PSL.PLOT_FLAG_ENTRY.msg()
+                        .replace("%flag%", flagName)
+                        .replace("%value%", val.toString().toLowerCase()));
+            }
+        }
+        if (!any) PSL.msg(p, PSL.PLOT_FLAG_NONE_SET.msg());
+        return true;
+    }
+
     // ─── Tab completion ───────────────────────────────────────────────────────
 
     @Override
@@ -363,13 +430,14 @@ public class ArgPlot implements PSCommandArg {
         Player p = (Player) sender;
 
         if (args.length == 2) {
-            return Arrays.asList("create", "delete", "add", "kick", "kickall", "list").stream()
+            return Arrays.asList("create", "delete", "add", "kick", "kickall", "list", "flag").stream()
                     .filter(s -> s.startsWith(args[1].toLowerCase()))
                     .collect(Collectors.toList());
         }
 
         if (args.length == 3) {
             switch (args[1].toLowerCase()) {
+                case "flag":
                 case "delete":
                 case "add":
                 case "kick": {
@@ -406,7 +474,17 @@ public class ArgPlot implements PSCommandArg {
                             .map(Player::getName)
                             .filter(n -> n.toLowerCase().startsWith(args[3].toLowerCase()))
                             .collect(Collectors.toList());
+                case "flag":
+                    return PLOT_ALLOWED_FLAGS.stream()
+                            .filter(f -> f.startsWith(args[3].toLowerCase()))
+                            .collect(Collectors.toList());
             }
+        }
+
+        if (args.length == 5 && args[1].equalsIgnoreCase("flag")) {
+            return Arrays.asList("allow", "deny", "none").stream()
+                    .filter(v -> v.startsWith(args[4].toLowerCase()))
+                    .collect(Collectors.toList());
         }
 
         return null;
